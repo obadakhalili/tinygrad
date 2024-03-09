@@ -47,7 +47,22 @@ class Linearizer(Kernel):
   def const(self, b:Union[int,float], dtype=dtypes.int32, insert_before=None) -> UOp:
     return self.uops.add(UOps.CONST, dtype, tuple(), b, insert_before=insert_before)
 
-  def cast(self, val: UOp, dtype) -> UOp: return self.uops.add(UOps.CAST, dtype, (val,)) if val.dtype != dtype else val
+  def cast(self, val: UOp, arg: Tuple[DType, bool]) -> UOp:
+    in_dtype, out_dtype = val.dtype, self.get_base_dtype(arg[0])
+    vin = (val,)
+    if arg[1] and out_dtype.itemsize < in_dtype.itemsize:
+      z_uop = self.const(0)
+      if not self.bitcast_shift_uop:
+        z_uop_idx = self.uops.uops.index(z_uop)
+        self.bitcast_shift_uop = self.uops.add(UOps.DEFINE_LOCAL, dtypes.int32, (), ("bitcast_shift", 1), cachable=False, insert_before=z_uop_idx + 1)
+        self.uops.add(UOps.STORE, None, (self.bitcast_shift_uop, z_uop, z_uop), cachable=False, insert_before=z_uop_idx + 2)
+      shift = self.uops.add(UOps.LOAD, dtypes.int32, (self.bitcast_shift_uop, z_uop), cachable=False)
+      vin += shift,
+      shift_incremented = self.uops.add(UOps.ALU, dtypes.int32, (shift, self.const(1)), BinaryOps.ADD, cachable=False)
+      limit = in_dtype.itemsize // out_dtype.itemsize
+      shift_adjusted = self.uops.add(UOps.ALU, dtypes.int32, (shift_incremented, self.const(limit)), BinaryOps.MOD, cachable=False)
+      self.uops.add(UOps.STORE, None, (self.bitcast_shift_uop, z_uop, shift_adjusted), cachable=False)
+    return self.uops.add(UOps.CAST, out_dtype, vin, arg)
 
   def get_reduce_acc(self, reduceop:LazyOp):
     info = get_lazyop_info(reduceop)
@@ -189,6 +204,7 @@ class Linearizer(Kernel):
     self.uops:UOpGraph = UOpGraph()
     self.buf_uops: List[Optional[UOp]] = [None]*len(self.bufs)
     self.loop_uops: Dict[str, UOp] = {}
+    self.bitcast_shift_uop: Optional[UOp] = None
 
     # add global buffers
     for i,buf in enumerate(self.bufs):
@@ -409,7 +425,7 @@ class Linearizer(Kernel):
     if x in cache: return cache[x]
     if x.op in BufferOps: return loaded_buffers[x.arg]
     if x.op == UnaryOps.CAST:
-      return [self.uops.add(UOps.CAST, self.get_base_dtype(x.arg[0]), (u,), x.arg) for u in self.ast_parse(x.src[0], acc, offs, loaded_buffers)]
+      return [self.cast(u, x.arg) for u in self.ast_parse(x.src[0], acc, offs, loaded_buffers)]
     if x.op in ReduceOps and not do_reduce:
       assert offs is None, "not available if we aren't doing reduce"
       return acc

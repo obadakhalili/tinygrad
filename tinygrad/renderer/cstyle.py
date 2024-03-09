@@ -33,8 +33,8 @@ class CStyleLanguage(NamedTuple):
     TernaryOps.WHERE: lambda a,b,c,dtype: f"({a}?{b}:{c})"}
 
   # returns a str expression of the casted xs with the given type
-  def render_cast(self, x:List[str], var_dtype:DType, bitcast=False) -> str:
-    if bitcast: return f"(*(({self.buffer_prefix}{self.render_dtype(var_dtype)}*)&{x[0]}))"
+  def render_cast(self, x:List[str], var_dtype:DType, bitcast=False, shift=None) -> str:
+    if bitcast: return f"(*(({self.buffer_prefix}{self.render_dtype(var_dtype)}*)&{x[0] + (f' + {shift}' if shift else '')}))"
     if len(x) == 1: return f"({self.render_dtype(var_dtype)})({x[0]})"
     assert len(x) == var_dtype.count, f"cast is wrong size {len(x)} != {var_dtype.count}"
     assert self.float4 is not None, "vectorized cast is not supported on this platform"
@@ -147,10 +147,10 @@ def uops_to_cstyle(lang:CStyleLanguage, function_name:str, uops:UOpGraph) -> str
         r[u] = r[vin[0]]
       elif uop is UOps.CAST:
         if isinstance(args, tuple) and args[1]:  # bitcast
-          assert len(vin) == 1
+          assert len(vin) == (2 if dtype.itemsize < vin[0].dtype.itemsize else 1)
           precast = ssa(None,'precast')
           kk(f"{lang.render_dtype(cast(DType, vin[0].dtype))} {precast} = {r[vin[0]]};")
-          val = lang.render_cast([precast], dtype, bitcast=True)
+          val = lang.render_cast([precast], dtype, bitcast=True, shift=r[vin[1]] if len(vin) == 2 else None)
         else:
           val = lang.render_cast([r[x] for x in vin], dtype, bitcast=False)
         if child_count[u] <= 1: r[u] = val

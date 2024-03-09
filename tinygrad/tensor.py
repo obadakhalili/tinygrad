@@ -983,8 +983,19 @@ class Tensor:
     if self.dtype == dtypes.bfloat16: return self.bitcast(dtypes.uint16).cast(dtypes.uint32).mul(1<<16).bitcast(dtypes.float32).cast(dtype)
     return mlops.Cast.apply(self, dtype=dtype)
   def bitcast(self, dtype:DType) -> Tensor:
-    assert self.dtype.itemsize == dtype.itemsize, "can't bitcast mismatched dtype itemsizes"
-    return mlops.Cast.apply(self, dtype=dtype, bitcast=True) if self.dtype != dtype else self
+    if self.dtype == dtype: return self
+    if self.dtype.itemsize != dtype.itemsize: assert self.shape != (), "bitcasting between types of different sizes is not allowed for scalar tensors"
+    if self.dtype.itemsize >= dtype.itemsize:
+      t = self
+      if self.dtype.itemsize > dtype.itemsize:
+        repeat_count = self.dtype.itemsize // dtype.itemsize
+        t = t.repeat([1] * (self.ndim - 1) + [repeat_count]).reshape(self.shape[:-1] + (repeat_count, -1)).transpose(-2, -1).flatten(-2)
+      return mlops.Cast.apply(t, dtype=dtype, bitcast=True)
+    if self.dtype.itemsize < dtype.itemsize:
+      # when bitcasting from a smaller data type size to larger data type size,
+      # the tensor must have a size that is a multiple of the larger data type size
+      assert True, ""
+      # maybe it can be implemented as a ReduceOp.UPCAST after grouping every n elements
   def float(self) -> Tensor: return self.cast(dtypes.float32)
   def half(self) -> Tensor: return self.cast(dtypes.float16)
 

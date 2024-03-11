@@ -69,6 +69,7 @@ class LazyBuffer:
     # TODO: applying this makes gpt2 slower
     if not bitcast and getenv("CAST_BEFORE_VIEW", 1) and dtype.itemsize <= self.dtype.itemsize and self != self.base:
       return self.base.cast(dtype)._view(self.st)
+    # out_shape = self.shape if self.dtype.itemsize >= dtype.itemsize else self.shape[:-1] + (self.shape[-1] // (dtype.itemsize // self.dtype.itemsize),)
     return create_lazybuffer(self.device, ShapeTracker.from_shape(self.shape), dtype, UnaryOps.CAST, (dtype, bitcast), (self,))
 
   def is_unrealized_const(self): return not self.base.realized and self.base.op is LoadOps.CONST

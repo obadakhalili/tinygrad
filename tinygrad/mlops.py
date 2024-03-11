@@ -20,6 +20,7 @@ class Cast(Function):
     self.input_dtype, self.bitcast = x.dtype, bitcast
     return x.cast(dtype, bitcast)
 
+  # in order for backward to work, casting to a larger dtype must be supported
   def backward(self, grad_output:LazyBuffer) -> LazyBuffer: return grad_output.cast(self.input_dtype, self.bitcast)
 
 # ************* unary ops *************

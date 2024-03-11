@@ -51,6 +51,7 @@ class Linearizer(Kernel):
     in_dtype, out_dtype = val.dtype, self.get_base_dtype(arg[0])
     vin = (val,)
     if arg[1] and out_dtype.itemsize < in_dtype.itemsize:
+      # find early loop index instead of this
       z_uop = self.const(0)
       if not self.bitcast_shift_uop:
         z_uop_idx = self.uops.uops.index(z_uop)
@@ -62,7 +63,7 @@ class Linearizer(Kernel):
       limit = in_dtype.itemsize // out_dtype.itemsize
       shift_adjusted = self.uops.add(UOps.ALU, dtypes.int32, (shift_incremented, self.const(limit)), BinaryOps.MOD, cachable=False)
       self.uops.add(UOps.STORE, None, (self.bitcast_shift_uop, z_uop, shift_adjusted), cachable=False)
-    return self.uops.add(UOps.CAST, out_dtype, vin, arg)
+    return self.uops.add(UOps.CAST, out_dtype, vin, arg)#, simplify=False)
 
   def get_reduce_acc(self, reduceop:LazyOp):
     info = get_lazyop_info(reduceop)
